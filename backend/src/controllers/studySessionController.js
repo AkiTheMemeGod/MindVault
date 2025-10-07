@@ -2,6 +2,7 @@ import StudySession from "../models/studySessionModel.js";
 import Chunk from "../models/chunkModel.js";
 import getEmbedding from "../utils/embedding.js";
 import fetch from "node-fetch";
+import config from '../config/index.js';
 
 function cosineSimilarity(a, b) {
   const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
@@ -199,11 +200,11 @@ ${question}
 Provide a helpful, educational response:`;
 
     // Call Ollama for response
-    const modelRes = await fetch("http://localhost:11434/api/generate", {
+    const modelRes = await fetch(`${config.ollamaUrl}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "mistral",
+        model: config.ollamaModel,
         prompt: studyPrompt
       }),
     });

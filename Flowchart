@@ -1,0 +1,52 @@
++--------------------+
+|  React Frontend    |
+|  - Upload PDF      |
+|  - Ask Question    |
++--------------------+
+          |
+          v
++--------------------+
+| Express Backend    |
+| Routes:            |
+| /api/upload        |
+| /api/query         |
++--------------------+
+          |
+          v
++--------------------+
+| Upload Controller  |
+| - Receive PDF      |
+| - Extract text     |
+| - Chunk text       |
+| - Generate embeddings (nomic-embed-text) |
+| - Store in MongoDB |
++--------------------+
+          |
+          v
++--------------------+
+| Vector DB / MongoDB|
+| - Stores text chunks + embeddings |
++--------------------+
+          |
+          v
++--------------------+
+| Query Controller   |
+| - Receive student question |
+| - Embed question (nomic-embed-text) |
+| - Compute similarity vs stored chunks |
+| - Retrieve top relevant chunks |
+| - Build context text |
+| - Send context + question to Mistral |
++--------------------+
+          |
+          v
++--------------------+
+| Mistral AI         |
+| - Generates answer based on context |
++--------------------+
+          |
+          v
++--------------------+
+| React Frontend     |
+| - Display answer   |
++--------------------+

@@ -1,0 +1,32 @@
+study-assistant/
+├── backend/
+│   ├── package.json
+│   ├── server.js               # Entry point
+│   ├── config/
+│   │   └── db.js               # MongoDB connection
+│   ├── routes/
+│   │   ├── upload.js           # File upload endpoint
+│   │   ├── query.js            # Question answering endpoint
+│   ├── controllers/
+│   │   ├── uploadController.js # Handles PDF extraction + chunking + embedding
+│   │   └── queryController.js  # Handles RAG query + Mistral call
+│   ├── models/
+│   │   └── chunkModel.js       # MongoDB schema for text chunks & embeddings
+│   ├── utils/
+│   │   ├── pdfParser.js        # Extracts text from PDFs
+│   │   ├── chunker.js          # Splits text into chunks
+│   │   ├── embedding.js        # Calls nomic-embed-text API
+│   │   └── similarity.js       # Cosine similarity for retrieval
+│   └── middleware/
+│       └── uploadMiddleware.js # Handles file upload (e.g., multer)
+├── frontend/
+│   ├── package.json
+│   ├── src/
+│   │   ├── App.js
+│   │   ├── components/
+│   │   │   ├── UploadForm.js
+│   │   │   └── ChatInterface.js
+│   │   └── api/
+│   │       ├── uploadAPI.js
+│   │       └── queryAPI.js
+└── README.md

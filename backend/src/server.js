@@ -18,19 +18,30 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
 connectDB();
 
-// Serve uploaded files with proper MIME types
-app.use("/api/files", express.static(path.join(__dirname, "../uploads"), {
-  setHeaders: (res, filePath) => {
-    // All uploaded files are PDFs, so set the correct MIME type
-    res.setHeader('Content-Type', 'application/pdf');
-    // Enable CORS for file serving
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+// Serve uploaded files from MongoDB
+import File from './models/fileModel.js';
+
+app.get('/api/files/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const fileDoc = await File.findOne({ filename });
+    if (!fileDoc) return res.status(404).send('File not found');
+
+    res.setHeader('Content-Type', fileDoc.contentType || 'application/pdf');
+    res.setHeader('Content-Length', fileDoc.size || fileDoc.data.length);
+    // CORS already allowed by app.use(cors())
+
+    // Stream the buffer
+    const stream = Buffer.from(fileDoc.data);
+    res.send(stream);
+  } catch (err) {
+    console.error('File serve error:', err);
+    res.status(500).send('Server error');
   }
-}));
+});
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -43,5 +54,7 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-const PORT = process.env.PORT || 5000;
+import config from './config/index.js';
+
+const PORT = config.port || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

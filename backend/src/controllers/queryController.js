@@ -1,6 +1,7 @@
 import Chunk from "../models/chunkModel.js";
 import getEmbedding from "../utils/embedding.js";
 import fetch from "node-fetch";
+import config from '../config/index.js';
 
 function cosineSimilarity(a, b) {
   const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
@@ -30,11 +31,11 @@ export const askQuestion = async (req, res) => {
     const topChunks = allChunks.sort((a,b) => b.similarity - a.similarity).slice(0, 3);
     const contextText = topChunks.map(c => c.text).join("\n");
 
-    const modelRes = await fetch("http://localhost:11434/api/generate", {
+    const modelRes = await fetch(`${config.ollamaUrl}/generate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "mistral",
+        model: config.ollamaModel,
         prompt: `You are a helpful study assistant.\nAnswer the question using only the context below.\n\nContext:\n${contextText}\n\nQuestion:\n${question}`
       }),
       // set a timeout via AbortController if desired

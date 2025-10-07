@@ -1,18 +1,19 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { SunIcon, MoonIcon } from '@heroicons/react/24/solid';
 import { useTheme } from '../contexts/ThemeContext';
 
 const ThemeToggle = () => {
   const { isDarkMode, toggleTheme, isTransitioning } = useTheme();
 
-  return (
+  const toggleButton = (
     <button
       onClick={toggleTheme}
       disabled={isTransitioning}
       aria-label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
       title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
       className={
-        `fixed bottom-4 right-4 z-50 group relative overflow-hidden ` +
+  `fixed bottom-4 right-4 z-50 group overflow-hidden ` +
         `flex items-center justify-center w-14 h-14 rounded-2xl ` +
         `transform transition-all duration-300 ease-out ` +
         `hover:scale-110 active:scale-95 ` +
@@ -91,6 +92,14 @@ const ThemeToggle = () => {
       </div>
     </button>
   );
+
+  // Render into document.body to ensure the fixed positioning is not affected by
+  // parent transforms or overflow settings in route-specific containers.
+  if (typeof document !== 'undefined') {
+    return createPortal(toggleButton, document.body);
+  }
+
+  return toggleButton;
 };
 
 export default ThemeToggle;

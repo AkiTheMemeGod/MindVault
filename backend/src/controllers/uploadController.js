@@ -3,6 +3,8 @@ import chunker from "../utils/chunker.js";
 import getEmbedding from "../utils/embedding.js";
 import Chunk from "../models/chunkModel.js";
 import StudySession from "../models/studySessionModel.js";
+import File from "../models/fileModel.js";
+import crypto from 'crypto';
 
 export const uploadFile = async (req, res) => {
   try {
@@ -25,8 +27,20 @@ export const uploadFile = async (req, res) => {
 
     console.log(`Processing PDF: ${req.file.originalname}`);
     
-    // Parse PDF and create chunks
-    const text = await pdfParser(req.file.path);
+    // Save the file into MongoDB
+    const generatedName = crypto.randomBytes(16).toString('hex') + '.pdf';
+    const fileDoc = await File.create({
+      filename: generatedName,
+      originalName: req.file.originalname,
+      contentType: req.file.mimetype,
+      size: req.file.size,
+      data: req.file.buffer,
+      user: userId,
+      sessionId: sessionId
+    });
+
+    // Parse PDF from buffer and create chunks
+    const text = await pdfParser(req.file.buffer);
     console.log(`PDF parsed, text length: ${text.length}`);
     
     const chunks = chunker(text, 500);
@@ -42,8 +56,8 @@ export const uploadFile = async (req, res) => {
         return Chunk.create({
           text: chunkText,
           embedding,
-          fileName: req.file.filename,
-          originalName: req.file.originalname,
+          fileName: fileDoc.filename,
+          originalName: fileDoc.originalName,
           pageNumber: Math.floor(globalIndex / 10) + 1, // Approximate page number
           sessionId: sessionId
         });
@@ -53,10 +67,10 @@ export const uploadFile = async (req, res) => {
       console.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chunks.length / batchSize)}`);
     }
 
-    // Add document to session
+    // Add document to session (use filename from DB)
     session.documents.push({
-      fileName: req.file.filename,
-      originalName: req.file.originalname,
+      fileName: fileDoc.filename,
+      originalName: fileDoc.originalName,
       uploadDate: new Date()
     });
     

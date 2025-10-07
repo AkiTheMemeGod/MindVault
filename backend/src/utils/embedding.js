@@ -1,11 +1,13 @@
 import fetch from "node-fetch";
+import config from '../config/index.js';
 
 export default async function getEmbedding(text) {
-  const res = await fetch("http://localhost:11434/api/embeddings", {
+  const endpoint = `${config.ollamaUrl}/embeddings`;
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "nomic-embed-text",
+      model: config.embeddingModel,
       prompt: text
     })
   });

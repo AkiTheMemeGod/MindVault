@@ -21,7 +21,6 @@ app.use(express.json());
 
 connectDB();
 
-// Serve uploaded files from MongoDB
 import File from './models/fileModel.js';
 
 app.get('/api/files/:filename', async (req, res) => {

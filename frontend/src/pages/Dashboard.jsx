@@ -96,10 +96,12 @@ const Dashboard = () => {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center">
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <BookOpenIcon className="w-5 h-5 text-white" />
-                </div>
-                <span className="ml-2 text-xl font-bold text-gray-900">MindVault</span>
+                <Link to="/" className="flex items-center">
+                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <BookOpenIcon className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="ml-2 text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">MindVault</span>
+                </Link>
               </div>
             </div>
             
@@ -107,7 +109,8 @@ const Dashboard = () => {
               <span className="text-gray-700">Welcome back, {user?.name}!</span>
               <button
                 onClick={logout}
-                className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-500/20 text-sm font-semibold transition-all"
+                title="Logout"
               >
                 Logout
               </button>

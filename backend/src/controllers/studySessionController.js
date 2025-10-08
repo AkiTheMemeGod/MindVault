@@ -38,6 +38,302 @@ export const createStudySession = async (req, res) => {
   }
 };
 
+// Generate flashcards based on session documents and recent messages
+// Helper to extract JSON object from an LLM response string that may include code fences
+function extractJsonObject(str) {
+  if (!str || typeof str !== 'string') return null;
+  // Remove code fences like ```json ... ``` or ``` ... ```
+  str = str.replace(/```json[\s\S]*?```/gi, (m) => m.replace(/```json|```/gi, ''));
+  str = str.replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ''));
+  // Find first '{' and last '}' to get a JSON object
+  const start = str.indexOf('{');
+  const end = str.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  const jsonSlice = str.slice(start, end + 1);
+  try {
+    return JSON.parse(jsonSlice);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Attempt to sanitize minor JSON issues: trailing commas and single-quoted strings
+function sanitizeJsonCandidate(str) {
+  if (!str || typeof str !== 'string') return str;
+  let s = str.trim();
+  // Remove code fences
+  s = s.replace(/```json[\s\S]*?```/gi, (m) => m.replace(/```json|```/gi, ''));
+  s = s.replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ''));
+  // Remove trailing commas before } or ]
+  s = s.replace(/,\s*([}\]])/g, '$1');
+  // Replace single-quoted strings with double-quoted (naive)
+  // This is a best-effort; proper JSON should already use double quotes
+  s = s.replace(/'([^'\\]*)'/g, '"$1"');
+  return s;
+}
+
+export const generateFlashcards = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user._id;
+
+    const session = await StudySession.findOne({ _id: sessionId, user: userId });
+    if (!session) {
+      return res.status(404).json({ error: "Study session not found" });
+    }
+
+    // Collect context from top chunks similar to last few messages or all documents
+    const sessionDocuments = session.documents.map(doc => doc.fileName);
+    const allChunks = await Chunk.find({ fileName: { $in: sessionDocuments } }).limit(100);
+
+    if (!allChunks || allChunks.length === 0) {
+      return res.status(400).json({ error: "No documents found in this session. Please upload documents first." });
+    }
+
+    // If last user message exists, bias selection by similarity
+    let contextText = '';
+    const lastUserMsg = [...session.messages].reverse().find(m => m.type === 'user');
+    if (lastUserMsg) {
+      const qEmb = await getEmbedding(lastUserMsg.content);
+      allChunks.forEach(chunk => {
+        chunk.similarity = cosineSimilarity(qEmb, chunk.embedding);
+      });
+      const top = allChunks.sort((a,b)=>b.similarity-a.similarity).slice(0, 10);
+      contextText = top.map(c => c.text).join("\n");
+    } else {
+      contextText = allChunks.slice(0, 10).map(c => c.text).join("\n");
+    }
+
+    const prompt = `You are an expert study assistant.
+Important: Respond with ONLY JSON, no code fences and no prose. Use double quotes, no trailing commas.
+Create concise flashcards given STUDY_CONTEXT.
+Strict schema: { "flashcards": [ { "front": string, "back": string } ] }
+Return a JSON object { "flashcards": [ { "front": string, "back": string }... ] }.
+- front: a short question or key term.
+- back: a clear answer or definition, 1-3 sentences.
+- 8 to 12 flashcards total.
+- Use only the context. If insufficient, say so in one card.
+
+STUDY_CONTEXT:\n${contextText}`;
+
+    const modelRes = await fetch(`${config.ollamaUrl}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: "json" })
+    });
+
+    if (!modelRes.ok) {
+      const text = await modelRes.text();
+      return res.status(502).json({ error: `AI service error: ${modelRes.status} ${modelRes.statusText}`, details: text.slice(0,200) });
+    }
+
+    const contentType = modelRes.headers.get('content-type') || '';
+
+    let raw = '';
+    if (contentType.includes('application/json')) {
+      const data = await modelRes.json();
+      raw = typeof data?.response === 'string' ? data.response : '';
+    } else {
+      // NDJSON text stream
+      const text = await modelRes.text();
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj?.response) raw += obj.response;
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // Try direct JSON parse first
+    let parsed = null;
+    try {
+      parsed = typeof raw === 'string' ? JSON.parse(raw) : null;
+    } catch {}
+    if (!parsed) {
+      try { parsed = JSON.parse(sanitizeJsonCandidate(raw)); } catch {}
+    }
+    if (!parsed) parsed = extractJsonObject(raw);
+    if (!parsed) {
+      const cleaned = sanitizeJsonCandidate(raw);
+      parsed = extractJsonObject(cleaned);
+    }
+
+    // Fallback: sometimes the API returns structured object directly
+    if (!parsed || typeof parsed !== 'object') {
+      // Try to see if the entire response was already an object
+      // No-op here as we only have string raw; keep as null
+    }
+
+    if (!parsed) {
+      return res.status(502).json({ error: "Failed to parse AI flashcards JSON" });
+    }
+
+    const candidates = parsed.flashcards || parsed.cards || parsed.items || [];
+    const flashcards = Array.isArray(candidates) ? candidates.filter(fc => fc && fc.front && fc.back) : [];
+    if (flashcards.length === 0) {
+      return res.status(502).json({ error: "AI returned no flashcards" });
+    }
+
+    res.json({ flashcards });
+  } catch (error) {
+    console.error("Generate flashcards error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+import Quiz from "../models/quizModel.js";
+
+// Generate quiz questions
+export const generateQuiz = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { count } = req.body;
+    const userId = req.user._id;
+
+    const n = Math.max(1, Math.min(50, parseInt(count || '5', 10)));
+
+    const session = await StudySession.findOne({ _id: sessionId, user: userId });
+    if (!session) return res.status(404).json({ error: "Study session not found" });
+
+    const sessionDocuments = session.documents.map(doc => doc.fileName);
+    const allChunks = await Chunk.find({ fileName: { $in: sessionDocuments } }).limit(150);
+    if (!allChunks || allChunks.length === 0) {
+      return res.status(400).json({ error: "No documents found in this session. Please upload documents first." });
+    }
+
+    const contextText = allChunks.slice(0, 20).map(c => c.text).join("\n");
+
+    const prompt = `You are an expert quiz generator.
+Important: Respond with ONLY JSON, no code fences and no prose. Use double quotes, no trailing commas.
+From the STUDY_CONTEXT below, generate ${n} multiple-choice questions in strict JSON format.
+Strict schema: { "questions": [ { "question": string, "options": [string, string, string, string], "correctIndex": number } ] }
+Return an object { "questions": [ { "question": string, "options": [string, string, string, string], "correctIndex": number } ] }.
+Rules:
+- Options length must be 4. Only one correct.
+- The correctIndex is 0..3.
+- Use only the given context. Keep questions clear and unambiguous.
+- Avoid trivia not present in context.
+STUDY_CONTEXT:\n${contextText}`;
+
+    const modelRes = await fetch(`${config.ollamaUrl}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: config.ollamaModel, prompt, stream: false, format: "json" })
+    });
+
+    if (!modelRes.ok) {
+      const text = await modelRes.text();
+      return res.status(502).json({ error: `AI service error: ${modelRes.status} ${modelRes.statusText}`, details: text.slice(0,200) });
+    }
+    const contentType = modelRes.headers.get('content-type') || '';
+
+    let raw = '';
+    if (contentType.includes('application/json')) {
+      const data = await modelRes.json();
+    
+      raw = typeof data?.response === 'string' ? data.response : '';
+    } else {
+      const text = await modelRes.text();
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj?.response) raw += obj.response;
+        } catch { }
+      }
+    }
+
+    // Try direct JSON parse first
+    let parsed = null;
+    try {
+      parsed = typeof raw === 'string' ? JSON.parse(raw) : null;
+    } catch {}
+    if (!parsed) {
+      try { parsed = JSON.parse(sanitizeJsonCandidate(raw)); } catch {}
+    }
+    if (!parsed) parsed = extractJsonObject(raw);
+    if (!parsed) {
+      const cleaned = sanitizeJsonCandidate(raw);
+      parsed = extractJsonObject(cleaned);
+    }
+
+    if (!parsed) {
+      return res.status(502).json({ error: "Failed to parse AI quiz JSON" });
+    }
+
+    const qArr = parsed.questions || parsed.quiz || parsed.items || [];
+    const questions = Array.isArray(qArr) ? qArr.filter(q => q && q.question && Array.isArray(q.options) && q.options.length === 4 && Number.isInteger(q.correctIndex)) : [];
+    if (questions.length === 0) return res.status(502).json({ error: "AI returned no valid questions" });
+
+    // Create quiz in DB
+    const quiz = await Quiz.create({ sessionId, user: userId, questions });
+
+    res.json({ quizId: quiz._id, questions: quiz.questions });
+  } catch (error) {
+    console.error("Generate quiz error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const assessQuiz = async (req, res) => {
+  try {
+    const { sessionId, quizId } = req.params;
+    const { answers } = req.body;
+    const userId = req.user._id;
+
+    if (!Array.isArray(answers)) return res.status(400).json({ error: "answers must be an array of indices" });
+
+    const quiz = await Quiz.findOne({ _id: quizId, sessionId, user: userId });
+    if (!quiz) return res.status(404).json({ error: "Quiz not found" });
+
+    let score = 0;
+    quiz.questions.forEach((q, i) => {
+      if (answers[i] === q.correctIndex) score += 1;
+    });
+
+    const attempt = { answers, score, createdAt: new Date() };
+    quiz.attempts.push(attempt);
+    quiz.lastAttemptAt = new Date();
+    await quiz.save();
+
+    res.json({ score, total: quiz.questions.length, correctAnswers: quiz.questions.map(q => q.correctIndex) });
+  } catch (error) {
+    console.error("Assess quiz error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+export const listQuizzes = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user._id;
+
+    const quizzes = await Quiz.find({ sessionId, user: userId })
+      .select('createdAt lastAttemptAt attempts questions')
+      .sort({ createdAt: -1 });
+
+    // Map to summary with latest score if any
+    const items = quizzes.map(q => {
+      const lastAttempt = q.attempts?.[q.attempts.length - 1];
+      return {
+        id: q._id,
+        createdAt: q.createdAt,
+        lastAttemptAt: q.lastAttemptAt,
+        totalQuestions: q.questions.length,
+        lastScore: lastAttempt ? lastAttempt.score : null
+      };
+    });
+
+    res.json({ quizzes: items });
+  } catch (error) {
+    console.error("List quizzes error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
 export const getUserStudySessions = async (req, res) => {
   try {
     const userId = req.user._id;

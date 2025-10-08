@@ -13,7 +13,7 @@ const Landing = () => {
               <BookOpenIcon className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-5xl md:text-6xl font-bold text-gray-800 mb-4">
-              Mind<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-purple-600">Vault</span>
+              <span className="text-transparent bg-clip-text bg-[linear-gradient(90deg,#f59e0b,#ef4444,#f97316,#f43f5e,#fb7185)] bg-[length:200%_200%] animate-gradient-shift">MindVault</span>
             </h1>
             <p className="text-xl md:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto">
               Your AI-powered study companion that transforms how you learn from documents. 

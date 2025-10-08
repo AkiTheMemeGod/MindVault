@@ -377,6 +377,22 @@
   }
 }
 
+/* Animated gradient text helpers */
+.text-gradient-warm-animated {
+  background: linear-gradient(90deg, #f59e0b, #ef4444, #f97316, #f43f5e, #fb7185);
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientShift 3s ease-in-out infinite;
+}
+
+/* 3D card utilities for flashcards */
+.perspective { perspective: 1000px; }
+.preserve-3d { transform-style: preserve-3d; }
+.backface-hidden { backface-visibility: hidden; }
+.rotate-y-180 { transform: rotateY(180deg); }
+
 /* Custom keyframes used above */
 @keyframes slideIn {
   from { transform: translateY(10px); opacity: 0; }

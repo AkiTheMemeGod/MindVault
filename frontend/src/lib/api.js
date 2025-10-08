@@ -100,6 +100,26 @@ export const sessionsAPI = {
   }
 };
 
+// Study aids API (flashcards and quizzes)
+export const studyAidsAPI = {
+  generateFlashcards: async (sessionId) => {
+    const response = await api.post(`/sessions/${sessionId}/flashcards/generate`, {});
+    return response.data;
+  },
+  generateQuiz: async (sessionId, count) => {
+    const response = await api.post(`/sessions/${sessionId}/quiz/generate`, { count });
+    return response.data;
+  },
+  assessQuiz: async (sessionId, quizId, answers) => {
+    const response = await api.post(`/sessions/${sessionId}/quiz/${quizId}/assess`, { answers });
+    return response.data;
+  },
+  listQuizzes: async (sessionId) => {
+    const response = await api.get(`/sessions/${sessionId}/quizzes`);
+    return response.data;
+  }
+};
+
 // Upload API
 export const uploadAPI = {
   uploadFile: async (file, sessionId, onProgress) => {

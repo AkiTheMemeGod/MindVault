@@ -24,4 +24,13 @@ router.delete("/:sessionId", deleteStudySession);
 // Chat functionality
 router.post("/:sessionId/ask", askQuestionInSession);
 
+// Flashcards
+import { generateFlashcards, generateQuiz, assessQuiz, listQuizzes } from "../controllers/studySessionController.js";
+router.post("/:sessionId/flashcards/generate", generateFlashcards);
+
+// Quizzes
+router.post("/:sessionId/quiz/generate", generateQuiz);
+router.post("/:sessionId/quiz/:quizId/assess", assessQuiz);
+router.get("/:sessionId/quizzes", listQuizzes);
+
 export default router;

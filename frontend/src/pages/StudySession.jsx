@@ -34,6 +34,22 @@ const StudySession = () => {
   const [showPDF, setShowPDF] = useState(false);
   const [selectedPDF, setSelectedPDF] = useState(null);
   
+  // Tabs state: chat | flashcards | quiz
+  const [activeTab, setActiveTab] = useState('chat');
+  
+  // Flashcards state
+  const [flashcards, setFlashcards] = useState([]);
+  const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
+  
+  // Quiz state
+  const [quizCount, setQuizCount] = useState(5);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [quiz, setQuiz] = useState(null); // { quizId, questions }
+  const [answers, setAnswers] = useState([]);
+  const [quizResult, setQuizResult] = useState(null); // { score, total, correctAnswers }
+  const [quizHistory, setQuizHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -141,6 +157,77 @@ const StudySession = () => {
     setShowPDF(true);
   };
 
+  const handleGenerateFlashcards = async () => {
+    if (generatingFlashcards) return;
+    if (!session?.documents || session.documents.length === 0) {
+      toast.error('Upload documents first to generate flashcards');
+      return;
+    }
+    setGeneratingFlashcards(true);
+    try {
+      const { flashcards } = await import('../lib/api').then(m => m.studyAidsAPI.generateFlashcards(sessionId));
+      setFlashcards(flashcards);
+      toast.success(`Generated ${flashcards.length} flashcards`);
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate flashcards');
+    } finally {
+      setGeneratingFlashcards(false);
+    }
+  };
+
+  const loadQuizHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const { quizzes } = await import('../lib/api').then(m => m.studyAidsAPI.listQuizzes(sessionId));
+      setQuizHistory(quizzes);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'quiz') {
+      loadQuizHistory();
+    }
+  }, [activeTab]);
+
+  const handleGenerateQuiz = async () => {
+    if (quizLoading) return;
+    if (!session?.documents || session.documents.length === 0) {
+      toast.error('Upload documents first to take a quiz');
+      return;
+    }
+    setQuizLoading(true);
+    setQuizResult(null);
+    try {
+      const { quizId, questions } = await import('../lib/api').then(m => m.studyAidsAPI.generateQuiz(sessionId, quizCount));
+      setQuiz({ quizId, questions });
+      setAnswers(new Array(questions.length).fill(null));
+      toast.success('Quiz generated');
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to generate quiz');
+    } finally {
+      setQuizLoading(false);
+    }
+  };
+
+  const handleSubmitQuiz = async () => {
+    if (!quiz) return;
+    try {
+      const { score, total, correctAnswers } = await import('../lib/api').then(m => m.studyAidsAPI.assessQuiz(sessionId, quiz.quizId, answers));
+      setQuizResult({ score, total, correctAnswers });
+      toast.success(`Scored ${score}/${total}`);
+      await loadQuizHistory();
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to assess quiz');
+    }
+  };
+
   if (loading) {
     return (
       <div className={`min-h-screen ${theme.bg.gradientPremium} flex items-center justify-center animate-fade-in`}>
@@ -243,6 +330,27 @@ const StudySession = () => {
         </div>
       </header>
 
+      {/* Tabs */}
+      <div className={`${theme.bg.surface} border-b ${theme.border.primary}`}>
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex space-x-2 pt-3">
+            {[
+              { key: 'chat', label: 'Chat' },
+              { key: 'flashcards', label: 'Flashcards' },
+              { key: 'quiz', label: 'Quiz' }
+            ].map(t => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeTab === t.key ? theme.button.primary : theme.button.secondary}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Upload Section */}
       {showUpload && (
         <div className={`${theme.bg.surface} border-b ${theme.border.primary} px-4 py-6 animate-slide-in`}>
@@ -293,11 +401,12 @@ const StudySession = () => {
         </div>
       )}
 
-      {/* Chat Messages */}
-      <div className={`flex-1 ${showPDF ? 'mr-[60%]' : ''} transition-all duration-300`}>
-        <div className="h-[calc(100vh-200px)] overflow-y-auto px-4 py-6 scrollbar-thin">
-          <div className="max-w-4xl mx-auto space-y-6">
-            {session.messages?.length === 0 ? (
+      {/* Main Content by Tab */}
+      {activeTab === 'chat' && (
+        <div className={`flex-1 ${showPDF ? 'mr-[60%]' : ''} transition-all duration-300`}>
+          <div className="h-[calc(100vh-200px)] overflow-y-auto px-4 py-6 scrollbar-thin">
+            <div className="max-w-4xl mx-auto space-y-6">
+              {session.messages?.length === 0 ? (
               <div className={`text-center py-16 glass-morphism ${isDarkMode ? 'glass-morphism-dark' : ''} rounded-3xl mx-4 animate-fade-in-up card-hover`}>
                 <div className={`p-4 rounded-2xl ${theme.bg.gradientPrimary} inline-flex mb-6`}>
                   <BookOpenIcon className="w-12 h-12 text-white" />
@@ -377,7 +486,7 @@ const StudySession = () => {
               ))
             )}
             
-            {sending && (
+              {sending && (
               <div className="flex justify-start animate-fade-in">
                 <div className="flex space-x-3 max-w-4xl">
                   <div className={`flex-shrink-0 w-10 h-10 rounded-full ${theme.bg.gradientSecondary} flex items-center justify-center ${theme.effects.glow}`}>
@@ -394,16 +503,16 @@ const StudySession = () => {
               </div>
             )}
             
-            <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+            </div>
           </div>
-        </div>
 
-        {/* Message Input */}
-        <div className={`glass-morphism ${isDarkMode ? 'glass-morphism-dark' : ''} border-t ${theme.border.primary} px-4 py-6 backdrop-blur-xl`}>
-          <div className="max-w-4xl mx-auto">
-            <form onSubmit={handleSendMessage} className="flex space-x-4">
-              <div className="flex-1">
-                <textarea
+          {/* Message Input */}
+          <div className={`glass-morphism ${isDarkMode ? 'glass-morphism-dark' : ''} border-t ${theme.border.primary} px-4 py-6 backdrop-blur-xl`}>
+            <div className="max-w-4xl mx-auto">
+              <form onSubmit={handleSendMessage} className="flex space-x-4">
+                <div className="flex-1">
+                  <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder={
@@ -437,11 +546,102 @@ const StudySession = () => {
                     <span className="hidden sm:inline">Send</span>
                   </>
                 )}
-              </button>
-            </form>
+                </button>
+              </form>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {activeTab === 'flashcards' && (
+        <div className="px-4 py-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className={`text-xl font-semibold ${theme.text.primary}`}>Flashcards</h2>
+              <button onClick={handleGenerateFlashcards} disabled={generatingFlashcards} className={`px-4 py-2 rounded-xl ${theme.button.primary} disabled:opacity-50`}>
+                {generatingFlashcards ? 'Generating...' : 'Generate Flash Cards'}
+              </button>
+            </div>
+            {flashcards.length === 0 ? (
+              <p className={theme.text.secondary}>No flashcards yet. Click "Generate Flash Cards" to create them from your study session.</p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {flashcards.map((fc, idx) => (
+                  <Flashcard key={idx} front={fc.front} back={fc.back} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'quiz' && (
+        <div className="px-4 py-6">
+          <div className="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className={`text-xl font-semibold ${theme.text.primary}`}>Quiz</h2>
+                <div className="flex items-center space-x-2">
+                  <input type="number" min={1} max={50} value={quizCount} onChange={(e)=>setQuizCount(parseInt(e.target.value)||5)} className={`w-24 px-3 py-2 border rounded-lg ${theme.input.base} ${theme.input.focus}`} />
+                  <button onClick={handleGenerateQuiz} disabled={quizLoading} className={`px-4 py-2 rounded-xl ${theme.button.primary} disabled:opacity-50`}>
+                    {quizLoading ? 'Generating...' : 'Take a Quiz'}
+                  </button>
+                </div>
+              </div>
+
+              {!quiz ? (
+                <p className={theme.text.secondary}>Generate a quiz to get started.</p>
+              ) : (
+                <div className="space-y-6">
+                  {quiz.questions.map((q, qi) => (
+                    <div key={qi} className={`p-4 rounded-xl border ${theme.border.primary} ${theme.bg.surface}`}>
+                      <p className={`font-medium mb-3 ${theme.text.primary}`}>{qi+1}. {q.question}</p>
+                      <div className="space-y-2">
+                        {q.options.map((opt, oi) => (
+                          <label key={oi} className={`flex items-center space-x-2 p-2 rounded-lg cursor-pointer ${answers[qi]===oi ? 'bg-primary-50 dark:bg-neutral-800' : ''}`}>
+                            <input type="radio" name={`q-${qi}`} checked={answers[qi]===oi} onChange={()=>setAnswers(prev => { const a=[...prev]; a[qi]=oi; return a; })} />
+                            <span className={theme.text.secondary}>{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex justify-end">
+                    <button onClick={handleSubmitQuiz} className={`px-6 py-3 rounded-xl ${theme.button.accent}`}>Submit for assessment</button>
+                  </div>
+
+                  {quizResult && (
+                    <div className={`p-4 rounded-xl ${theme.status.info.bg} ${theme.status.info.text} border ${theme.status.info.border}`}>
+                      <p className="font-semibold">Your Score: {quizResult.score}/{quizResult.total}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="md:col-span-1">
+              <div className={`p-4 rounded-xl border ${theme.border.primary} ${theme.bg.surface}`}>
+                <h3 className={`font-semibold mb-3 ${theme.text.primary}`}>Past Quizzes</h3>
+                {loadingHistory ? (
+                  <p className={theme.text.secondary}>Loading...</p>
+                ) : quizHistory.length === 0 ? (
+                  <p className={theme.text.secondary}>No quizzes yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {quizHistory.map(q => (
+                      <div key={q.id} className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-700">
+                        <p className="text-sm text-neutral-600 dark:text-neutral-300">{new Date(q.createdAt).toLocaleString()}</p>
+                        <p className="text-sm font-medium">{q.totalQuestions} questions</p>
+                        <p className="text-sm">{q.lastScore !== null ? `Last score: ${q.lastScore}/${q.totalQuestions}` : 'Not attempted yet'}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PDF Viewer */}
       <PDFViewer
@@ -450,6 +650,23 @@ const StudySession = () => {
         pdfUrl={selectedPDF?.url}
         fileName={selectedPDF?.name}
       />
+    </div>
+  );
+};
+
+// Simple flashcard component with flip
+const Flashcard = ({ front, back }) => {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div className="relative h-40 cursor-pointer perspective" onClick={()=>setFlipped(f=>!f)}>
+      <div className={`absolute inset-0 rounded-xl border border-neutral-200 dark:border-neutral-700 p-4 transition-transform duration-300 preserve-3d ${flipped ? 'rotate-y-180' : ''}`}>
+        <div className="absolute inset-0 backface-hidden">
+          <p className="font-semibold text-neutral-900 dark:text-neutral-50">{front}</p>
+        </div>
+        <div className="absolute inset-0 rotate-y-180 backface-hidden">
+          <p className="text-neutral-700 dark:text-neutral-200">{back}</p>
+        </div>
+      </div>
     </div>
   );
 };

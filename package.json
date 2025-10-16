@@ -1,0 +1,21 @@
+{
+  "name": "mindvault",
+  "version": "1.0.0",
+  "description": "MindVault is a beautiful, full‑stack document Q&A system that lets users upload PDF documents and ask natural language questions about their contents. It combines PDF parsing, semantic chunking, vector embeddings, and a local LLM for retrieval‑augmented generation (RAG) so answers are grounded in your documents.",
+  "main": "index.js",
+  "scripts": {
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && npm run dev"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AkiTheMemeGod/MindVault.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AkiTheMemeGod/MindVault/issues"
+  },
+  "homepage": "https://github.com/AkiTheMemeGod/MindVault#readme"
+}
